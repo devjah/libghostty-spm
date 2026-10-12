@@ -17,8 +17,16 @@ private enum TerminalCallbacks {
         guard let userdata else { return }
         let controller = Unmanaged<TerminalController>.fromOpaque(userdata)
             .takeUnretainedValue()
-        terminalRunOnMain {
-            controller.handleWakeup()
+        // A wakeup on the main thread comes from inside a tick or a C call
+        // the main thread made; it ticks inline, as it always has.
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { controller.handleWakeup() }
+            return
+        }
+        guard controller.wakeupGate.claim() else { return }
+        DispatchQueue.main.async {
+            controller.wakeupGate.release()
+            MainActor.assumeIsolated { controller.handleWakeup() }
         }
     }
 

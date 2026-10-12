@@ -209,15 +209,23 @@ final class TerminalSurfaceCoordinator {
         // thread on its next push. Only a detached surface or a
         // backgrounded app suspends ticks — visibility gates rendering
         // alone (canRenderFrame).
+        // AppKit: Ghostty's renderer thread draws and presents on its own, and the wakeup's
+        // ghostty_app_tick has already drained the mailbox. A tick per wakeup added a refresh
+        // and a synchronous main-thread draw to every surface for every mailbox message, and
+        // the renderer posts one per frame it draws (the scrollbar): two more presents per
+        // frame, per surface.
+        #if canImport(UIKit)
+            let onWakeup: () -> Void = { [weak self] in self?.requestImmediateTick() }
+        #else
+            let onWakeup: () -> Void = {}
+        #endif
         controller.addWakeupObserver(
             ObjectIdentifier(self),
             shouldProcess: { [weak self] in
                 guard let self else { return false }
                 return isApplicationActive && isAttached()
             },
-            onWakeup: { [weak self] in
-                self?.requestImmediateTick()
-            }
+            onWakeup: onWakeup
         )
         TerminalDebugLog.log(.lifecycle, "surface rebuild succeeded")
         (delegate as? any TerminalSurfaceLifecycleDelegate)?
@@ -510,6 +518,7 @@ final class TerminalSurfaceCoordinator {
         var testHooks_throttleArmed: Bool { resizeThrottleArmed }
         var testHooks_throttleTrailing: Bool { resizeThrottleTrailing }
         var testHooks_throttleGeneration: Int { resizeThrottleGeneration }
+        var testHooks_pendingImmediateTick: Bool { pendingImmediateTick }
     #endif
 
     // MARK: - Cleanup
